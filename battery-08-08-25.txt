@@ -130,6 +130,12 @@ binary_sensor:
     filters:
       - delayed_on: 100ms
       - delayed_off: 300ms
+    on_release:
+      then:
+        - logger.log: "Voltage lost — entering deep sleep."
+        - light.turn_off: awake_led
+        - deep_sleep.enter: deep_sleep_ctrl
+
 
   # Gate that turns ON only when all required sensors have valid, non-NaN values
   - platform: template
@@ -174,7 +180,7 @@ light:
 
 interval:
   # Poll ADC fast so voltage_present flips quickly when 5V is removed
-  - interval: 1s
+  - interval: 5s
     then:
       - component.update: adc_pin_v
 
