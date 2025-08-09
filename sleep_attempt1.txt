@@ -1,29 +1,25 @@
-# Stays asleep unless 5V is present (via divider). While 5V is present, stays awake.
-# When 5V disappears (or at boot with no 5V), do a final refresh and then wait ~30s before deep sleep.
-# Uses GPIO36 for ADC and GPIO39 for wake.
+#code parts used from
+#https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
+#https://github.com/kotope/esphome_eink_dashboard
+#https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
+#https://github.com/hanspeda/esphome_homeassistant_display/blob/aa3692f4f687b46d6d0564f673cf51bfa3225d60/esphome-web-399610.yaml
+
+#run and sleep times
+substitutions:
+  run_time: 1min #can be as long as needed to get data 
+  sleep_time: 20min # normal sleep time
+  night_sleep_time: 7h # 1st sleep time after midnight
 
 esphome:
   name: battery
   friendly_name: Battery
-  on_boot:
-    priority: -100
-    then:
-      - component.update: adc_pin_v
-      - delay: 200ms
-      - if:
-          condition:
-            binary_sensor.is_off: voltage_present
-          then:
-            - logger.log: "No 5V at boot -> 30s grace, then deep sleep (unless 5V returns)."
-            - script.execute: graceful_sleep
-          else:
-            - logger.log: "5V present at boot -> staying awake."
 
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
 
+# Enable logging
 logger:
 
 api:
@@ -34,7 +30,6 @@ ota:
   - platform: esphome
     password: "af02dabd1a628b113fb6ffc6c6a94c17"
 
-
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -44,15 +39,13 @@ wifi:
 
 captive_portal:
 
-# SPI bus for E-Ink display
-spi:
-  clk_pin: GPIO18
-  mosi_pin: GPIO23
-
-# NOTE about GPIO15 warning:
-# GPIO15 is a strapping pin. Using it as CS can be OK if you don't add external pull-ups/downs.
-# If you'd rather avoid the warning, move cs_pin to a safe pin like GPIO5 (and rewire).
-# cs_pin: GPIO5
+deep_sleep:
+  run_duration: ${run_time} 
+  sleep_duration: ${sleep_time}
+  id: deep_sleep_1
+  esp32_ext1_wakeup:
+    pins: GPIO39
+    mode: ALL_LOW
 
 font:
   - file: "fonts/TEMPSITC.TTF"
@@ -82,8 +75,13 @@ image:
     resize: 42x42
     invert_alpha: true
 
+# SPI bus for E-Ink display
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+
 sensor:
-  # Outside Pressure (check spelling of your HA entity; “forcast” vs “forecast”)
+  # Outside Pressure
   - platform: homeassistant
     id: forecast_pressure
     entity_id: sensor.forcast_pressure
@@ -127,47 +125,63 @@ sensor:
           window_size: 10
           send_every: 1
 
-  # --- Reconstructed source voltage (pre-divider) ---
-  - platform: copy
-    source_id: adc_pin_v
-    id: source_voltage
-    name: "Source Voltage (pre-divider)"
-    unit_of_measurement: "V"
-    accuracy_decimals: 2
-    filters:
-      - multiply: 1.8
-    on_value:
+    #refresh
+    on_value: # Actions to perform once data for the last sensor has been received
       then:
-        - lambda: |-
-            // Hysteresis: ON above 4.0 V, OFF below 3.0 V
-            static bool present = false;
-            if (!present && x > 4.0) present = true;
-            else if (present && x < 3.0) present = false;
-            id(voltage_present).publish_state(present);
+        - script.execute: all_data_received
 
 text_sensor:
   - platform: homeassistant
     id: forecast_condition
     entity_id: weather.forecast_home
+    on_value:
+      then:
+        - script.execute: all_data_received
+
+binary_sensor:
+  - platform: gpio
+    id: epd_busy
+    internal: true
+    pin:
+      number: GPIO4
+      mode: INPUT
+      inverted: false   # if your panel reports LOW while busy, leave this false
 
 time:
   - platform: homeassistant
     id: home_time
 
-binary_sensor:
-  # Driven by the copy sensor's on_value lambda above
-  - platform: template
-    id: voltage_present
-    name: "Voltage Present"
-    device_class: power
-    filters:
-      - delayed_on: 100ms
-      - delayed_off: 300ms
-    # If 5V is lost while we're awake, start 30s grace period
-    on_release:
-      then:
-        - logger.log: "5V lost -> 30s grace, then deep sleep (unless 5V returns)."
-        - script.execute: graceful_sleep
+script:
+  - id: all_data_received
+    then:
+      - component.update: epd
+      - wait_until:
+          condition:
+            binary_sensor.is_off: epd_busy   # off = not busy
+          timeout: 30s
+      - delay: 300ms   # tiny extra cushion
+      - script.execute: enter_sleep
+
+  - id: enter_sleep
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto time = id(home_time).now();
+              if (!time.is_valid()) {
+                return false;
+              }
+              return (time.hour < 6);
+          then:
+            - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
+            - deep_sleep.enter:
+                id: deep_sleep_1
+                sleep_duration: ${night_sleep_time}
+          else:
+            - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
+            - deep_sleep.enter:
+                id: deep_sleep_1
+                sleep_duration: ${sleep_time}
 
 display:
   - platform: waveshare_epaper
@@ -179,8 +193,8 @@ display:
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
-    full_update_every: 5
-    update_interval: 10s          # refresh periodically while 5V keeps us awake
+    full_update_every: 2
+    update_interval: never
     lambda: |-
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
@@ -205,48 +219,3 @@ display:
 
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
-
-# Graceful sleep script: final refresh, then a cancellable ~30s grace window
-script:
-  - id: graceful_sleep
-    mode: restart
-    then:
-      - logger.log: "Graceful sleep: final refresh, then 30s grace."
-      # One last data + display refresh
-      - component.update: adc_pin_v
-      - component.update: epd
-      # Give e-paper a moment to settle, counted inside the 30s window
-      - delay: 6s
-      # Remaining ~24–44 seconds of grace, checking each second
-      - repeat:
-          count: 44
-          then:
-            - if:
-                condition:
-                  binary_sensor.is_on: voltage_present
-                then:
-                  - logger.log: "5V returned during grace -> cancel sleep."
-                  - script.stop: graceful_sleep
-            - component.update: adc_pin_v
-            - delay: 1s
-      # Final check before sleeping
-      - if:
-          condition:
-            binary_sensor.is_on: voltage_present
-          then:
-            - logger.log: "5V is back at end of grace -> staying awake."
-          else:
-            - logger.log: "Grace elapsed with no 5V -> entering deep sleep."
-            - deep_sleep.enter: deep_sleep_ctrl
-
-deep_sleep:
-  id: deep_sleep_ctrl
-  sleep_duration: 30sec       # Only used when 5V is gone; wakes when 5V returns
-  wakeup_pin: GPIO39          # Separate RTC pin tied to the divider
-  wakeup_pin_mode: KEEP_AWAKE # Do NOT deep sleep while this pin is HIGH (i.e., 5V present)
-
-# Poll ADC while awake so we can react fast if 5V disappears/returns
-interval:
-  - interval: 5s
-    then:
-      - component.update: adc_pin_v
