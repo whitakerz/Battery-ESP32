@@ -1,6 +1,23 @@
+# This ESPHome node stays asleep unless 5V is present on GPIO36 (via divider).
+# While 5V is present, it stays awake. As soon as 5V disappears, it enters deep sleep.
+
 esphome:
   name: battery
   friendly_name: Battery
+  on_boot:
+    # Decide immediately on boot: sleep unless 5V is present
+    priority: -100
+    then:
+      - component.update: adc_pin_v
+      - delay: 200ms
+      - if:
+          condition:
+            binary_sensor.is_off: voltage_present
+          then:
+            - logger.log: "No 5V at boot -> going to deep sleep."
+            - deep_sleep.enter: deep_sleep_ctrl
+          else:
+            - logger.log: "5V present at boot -> staying awake."
 
 esp32:
   board: esp32dev
@@ -29,7 +46,20 @@ wifi:
     password: "BDVDN7O0KT7E"
 
 captive_portal:
-  
+
+# Deep sleep: keep awake while 5V is present on GPIO36; sleep long otherwise.
+deep_sleep:
+  id: deep_sleep_ctrl
+  sleep_duration: 24h            # Arbitrary long; wakes when 5V returns
+  wakeup_pin: GPIO36             # Same pin you read (RTC-capable)
+  wakeup_pin_mode: KEEP_AWAKE    # Do NOT deep sleep while the pin is HIGH (5V present)
+
+# Poll ADC while awake so we can react fast if 5V disappears
+interval:
+  - interval: 5s
+    then:
+      - component.update: adc_pin_v
+
 # SPI bus for E-Ink display
 spi:
   clk_pin: GPIO18
@@ -39,7 +69,7 @@ font:
   - file: "fonts/TEMPSITC.TTF"
     id: my_font
     size: 30
-  
+
   - file: "fonts/GILSANUB.TTF"
     id: GILSANUB
     size: 38
@@ -50,21 +80,20 @@ image:
     type: BINARY
     resize: 24x24
     invert_alpha: true
-  
+
   - file: "icons/House.bmp"
     id: icon_inside
     type: BINARY
     resize: 34x34
-    invert_alpha: FALSE
+    invert_alpha: false
 
   - file: "icons/Outside.bmp"
     id: icon_tree
     type: BINARY
     resize: 42x42
     invert_alpha: true
-  # Add other icons as needed
 
-# Pull sensors from Home Assistant
+# Pull sensors from Home Assistant + local ADC sensors
 sensor:
   # Outside Pressure
   - platform: homeassistant
@@ -88,7 +117,6 @@ sensor:
 
   # Zach's Office Humidity
   - platform: homeassistant
-    #test
     id: humidity_printer
     entity_id: sensor.printer_barometer_humidity
 
@@ -97,15 +125,64 @@ sensor:
     id: temperature_printer
     entity_id: sensor.printer_barometer_temperature
 
+  # --- ADC pin voltage on GPIO36 (after divider) ---
+  - platform: adc
+    id: adc_pin_v
+    name: "ADC Pin Voltage (GPIO36)"
+    pin: GPIO36
+    attenuation: 12db
+    internal: true
+    update_interval: never      # <- take readings only when we ask
+    accuracy_decimals: 2
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+  # --- Reconstructed source voltage (pre-divider) ---
+  # Divider is 22k (top) and 30k (bottom) => multiply by (22+30)/30 = 52/30 = 1.733333
+  - platform: copy
+    source_id: adc_pin_v
+    id: source_voltage
+    name: "Source Voltage (pre-divider)"
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    filters:
+      - multiply: 1.733333
+    on_value:
+      then:
+        - lambda: |-
+            // Hysteresis: ON above 4.0 V, OFF below 3.0 V
+            static bool present = false;
+            if (!present && x > 4.0) present = true;
+            else if (present && x < 3.0) present = false;
+            id(voltage_present).publish_state(present);
+
 text_sensor:
   - platform: homeassistant
     id: forecast_condition
     entity_id: weather.forecast_home
 
+# Binary sensor driven by the on_value lambda above
+binary_sensor:
+  - platform: template
+    id: voltage_present
+    name: "Voltage Present"
+    device_class: power
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 300ms
+    # If 5V is lost while we're awake, go straight to sleep
+    on_release:
+      then:
+        - logger.log: "5V lost -> entering deep sleep."
+        - deep_sleep.enter: deep_sleep_ctrl
+
 # Display configuration
 display:
   - platform: waveshare_epaper
     model: 2.90inv2-r2
+    reset_duration: 2ms
     rotation: 90°
     cs_pin: GPIO15
     dc_pin: GPIO17
@@ -121,10 +198,8 @@ display:
       static const int OUTSIDE_TEMP_VERT = 15;
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
-      static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;   
+      static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
 
-     
-      //it.strftime(5, 5, id(my_font), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
       it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
@@ -137,4 +212,4 @@ display:
       it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state); // mmHg
 
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
-      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));    
+      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
