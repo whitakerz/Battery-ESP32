@@ -10,9 +10,19 @@ substitutions:
   sleep_time: 20min      # normal sleep time
   night_sleep_time: 7h   # 1st sleep time after midnight
 
+output:
+  - platform: gpio
+    pin: GPIO22
+    id: awake_led
+
+# Turn LED on when the device boots (awake)
 esphome:
   name: battery
   friendly_name: Battery
+  on_boot:
+    priority: -100
+    then:
+      - output.turn_on: awake_led
 
 esp32:
   board: esp32dev
@@ -64,7 +74,7 @@ image:
     id: icon_partlycloudy
     type: BINARY
     resize: 24x24
-    invert: true
+    invert_alpha: true
 
   - file: "icons/House.bmp"
     id: icon_inside
@@ -157,12 +167,8 @@ script:
 
               // Ensure all numeric sensors have values
               return (
-                !isnan(id(forecast_pressure).state) &&
-                !isnan(id(humidity_outside).state) &&
                 !isnan(id(temperature_outside).state) &&
-                !isnan(id(pressure_printer).state) &&
-                !isnan(id(humidity_printer).state) &&
-                !isnan(id(temperature_printer).state)
+                !isnan(id(humidity_printer).state)
               );
           then:
             - script.execute: all_data_received
@@ -175,6 +181,7 @@ script:
 
   - id: enter_sleep
     then:
+      - output.turn_off: awake_led   # LED off while sleeping
       - if:
           condition:
             lambda: |-
@@ -193,6 +200,7 @@ script:
             - deep_sleep.enter:
                 id: deep_sleep_1
                 sleep_duration: ${sleep_time}
+
 
 display:
   - platform: waveshare_epaper
