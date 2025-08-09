@@ -1,5 +1,6 @@
 # Stays asleep unless 5V is present (via divider). While 5V is present, stays awake.
-# As soon as 5V disappears, enters deep sleep. Uses GPIO36 for ADC and GPIO39 for wake.
+# As soon as 5V disappears, runs a final update and then enters deep sleep.
+# Uses GPIO36 for ADC and GPIO39 for wake.
 
 esphome:
   name: battery
@@ -14,8 +15,8 @@ esphome:
           condition:
             binary_sensor.is_off: voltage_present
           then:
-            - logger.log: "No 5V at boot -> going to deep sleep."
-            - deep_sleep.enter: deep_sleep_ctrl
+            - logger.log: "No 5V at boot -> final update, then deep sleep."
+            - script.execute: graceful_sleep
           else:
             - logger.log: "5V present at boot -> staying awake."
 
@@ -43,19 +44,6 @@ wifi:
 
 captive_portal:
 
-# Deep sleep: keep awake while 5V is present on GPIO39; sleep otherwise.
-deep_sleep:
-  id: deep_sleep_ctrl
-  sleep_duration: 30sec             # Arbitrary long; wakes when 5V returns
-  wakeup_pin: GPIO39              # <- NEW: separate RTC pin for wake
-  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
-
-# Poll ADC while awake so we can react fast if 5V disappears
-interval:
-  - interval: 5s
-    then:
-      - component.update: adc_pin_v
-
 # SPI bus for E-Ink display
 spi:
   clk_pin: GPIO18
@@ -70,9 +58,13 @@ font:
   - file: "fonts/TEMPSITC.TTF"
     id: my_font
     size: 30
+  
   - file: "fonts/GILSANUB.TTF"
     id: GILSANUB
     size: 38
+  - file: "fonts/GILSANUB.TTF"
+    id: small
+    size: 14
 
 image:
   - file: "icons/partly_cloudy.bmp"
@@ -144,7 +136,7 @@ sensor:
     unit_of_measurement: "V"
     accuracy_decimals: 2
     filters:
-      - multiply: 1.733333
+      - multiply: 1.8
     on_value:
       then:
         - lambda: |-
@@ -159,6 +151,10 @@ text_sensor:
     id: forecast_condition
     entity_id: weather.forecast_home
 
+time:
+  - platform: homeassistant
+    id: home_time
+
 binary_sensor:
   # Driven by the on_value lambda above
   - platform: template
@@ -168,14 +164,15 @@ binary_sensor:
     filters:
       - delayed_on: 100ms
       - delayed_off: 300ms
-    # If 5V is lost while we're awake, go straight to sleep
+    # If 5V is lost while we're awake, finish work, then sleep
     on_release:
       then:
-        - logger.log: "5V lost -> entering deep sleep."
-        - deep_sleep.enter: deep_sleep_ctrl
+        - logger.log: "5V lost -> finishing work, then deep sleep."
+        - script.execute: graceful_sleep
 
 display:
   - platform: waveshare_epaper
+    id: epd
     model: 2.90inv2-r2
     reset_duration: 2ms
     rotation: 90°
@@ -183,7 +180,7 @@ display:
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
-    full_update_every: 30
+    full_update_every: 2
     update_interval: 60s
     lambda: |-
       static const int IMAGE_HORIZONTAL = 10;
@@ -195,6 +192,7 @@ display:
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
 
+      it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
       it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
@@ -208,3 +206,28 @@ display:
 
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
+
+# Graceful sleep script: do last updates, wait for e-paper to finish, then sleep
+script:
+  - id: graceful_sleep
+    mode: single
+    then:
+      - logger.log: "Graceful sleep: final update + display refresh."
+      - component.update: adc_pin_v
+      - component.update: epd
+      # Allow the e-paper time to complete its refresh
+      - delay: 3s
+      - deep_sleep.enter: deep_sleep_ctrl
+
+
+deep_sleep:
+  id: deep_sleep_ctrl
+  sleep_duration: 30sec           # Arbitrary long; wakes when 5V returns
+  wakeup_pin: GPIO39              # Separate RTC pin for wake
+  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
+
+# Poll ADC while awake so we can react fast if 5V disappears
+interval:
+  - interval: 5s
+    then:
+      - component.update: adc_pin_v
