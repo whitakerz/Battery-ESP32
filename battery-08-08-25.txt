@@ -1,7 +1,3 @@
-# Stays asleep unless 5V is present (via divider). While 5V is present, stays awake.
-# When 5V disappears (or at boot with no 5V), do a final refresh and then wait ~30s before deep sleep.
-# Uses GPIO36 for ADC and GPIO39 for wake.
-
 esphome:
   name: battery
   friendly_name: Battery
@@ -168,6 +164,16 @@ binary_sensor:
       then:
         - logger.log: "5V lost -> 30s grace, then deep sleep (unless 5V returns)."
         - script.execute: graceful_sleep
+
+  # Gate that turns ON only when all required sensors have valid, non-NaN values
+  - platform: template
+    id: sensors_ready
+    name: "Sensors Ready"
+    lambda: |-
+      return (
+        id(temperature_printer).has_state() && !isnan(id(temperature_printer).state)
+      );
+
 output:
   - platform: gpio
     pin: GPIO22
@@ -185,49 +191,53 @@ display:
     model: 2.90inv2-r2
     reset_duration: 2ms
     rotation: 90°
-    cs_pin: GPIO15
+    cs_pin: GPIO15         # keep as-is unless you choose to rewire to GPIO5 (see note above)
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
     full_update_every: 5
     update_interval: 10s
     lambda: |-
-      // Only update if printer temperature is valid
-      if (!isnan(id(temperature_printer).state)) {
-        static const int IMAGE_HORIZONTAL = 10;
-        static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
-        static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
-        static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
-        static const int OUTSIDE_TEMP_VERT = 15;
-        static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
-        static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
-        static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
-
-        it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
-        it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
-        it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
-        it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
-        it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
-        it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
-        it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
-
-        it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
-        it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
-      } else {
-        ESP_LOGI("display", "Printer temperature NaN — skipping screen update");
+      // Don't draw until sensors are ready
+      if (!id(sensors_ready).state) {
+        ESP_LOGI("display", "Sensors not ready — skipping EPaper draw");
+        return;
       }
 
-# Graceful sleep script: final refresh, then a cancellable 30s grace window
+      static const int IMAGE_HORIZONTAL = 10;
+      static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
+      static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
+      static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
+      static const int OUTSIDE_TEMP_VERT = 15;
+      static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
+      static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
+      static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
+
+      it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
+      it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
+      it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
+      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
+      it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+      it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
+      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
+
+# Graceful sleep script: final refresh, then a cancellable grace window
 script:
   - id: graceful_sleep
     mode: restart
     then:
       - logger.log: "Graceful sleep: final refresh, then 30s grace."
       - component.update: adc_pin_v
-      - component.update: epd
+      - if:
+          condition:
+            binary_sensor.is_on: sensors_ready
+          then:
+            - component.update: epd
+          else:
+            - logger.log: "Skipping epd refresh; sensors not ready."
       - delay: 6s
       - repeat:
-          count: 44
+          count: 14
           then:
             - if:
                 condition:
