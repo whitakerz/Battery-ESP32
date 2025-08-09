@@ -2,6 +2,17 @@
 # When 5V disappears (or at boot with no 5V), do a final refresh and then wait ~30s before deep sleep.
 # Uses GPIO36 for ADC and GPIO39 for wake.
 
+substitutions:
+  run_time: 1min #can be as long as needed to get data 
+  sleep_time: 20min # normal sleep time
+  night_sleep_time: 7h # 1st sleep time after midnight
+
+script:
+  - id: all_data_received
+    then:
+      - component.update: epd
+      - script.execute: enter_sleep    
+
 esphome:
   name: battery
   friendly_name: Battery
@@ -24,7 +35,6 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-
 logger:
 
 api:
@@ -43,6 +53,14 @@ wifi:
     password: "BDVDN7O0KT7E"
 
 captive_portal:
+
+deep_sleep:
+  id: deep_sleep_ctrl
+  run_duration: ${run_time}
+  sleep_duration: 30sec           # Wakes when 5V returns
+  wakeup_pin: GPIO39              # Separate RTC pin for wake
+  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
+
 
 # SPI bus for E-Ink display
 spi:
@@ -179,8 +197,8 @@ display:
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
-    full_update_every: 5
-    update_interval: 10s
+    full_update_every: 2
+    update_interval: never
     lambda: |-
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
@@ -239,11 +257,7 @@ script:
             - logger.log: "Grace elapsed with no 5V -> entering deep sleep."
             - deep_sleep.enter: deep_sleep_ctrl
 
-deep_sleep:
-  id: deep_sleep_ctrl
-  sleep_duration: 30sec           # Wakes when 5V returns
-  wakeup_pin: GPIO39              # Separate RTC pin for wake
-  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
+
 
 # Poll ADC while awake so we can react fast if 5V disappears/returns
 interval:
