@@ -2,22 +2,10 @@
 # When 5V disappears (or at boot with no 5V), do a final refresh and then wait ~30s before deep sleep.
 # Uses GPIO36 for ADC and GPIO39 for wake.
 
-substitutions:
-  run_time: 1min #can be as long as needed to get data 
-  sleep_time: 20min # normal sleep time
-  night_sleep_time: 7h # 1st sleep time after midnight
-
-script:
-  - id: all_data_received
-    then:
-      - component.update: epd
-      - script.execute: enter_sleep    
-
 esphome:
   name: battery
   friendly_name: Battery
   on_boot:
-    # Decide immediately on boot: sleep unless 5V is present
     priority: -100
     then:
       - component.update: adc_pin_v
@@ -35,6 +23,7 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
+
 logger:
 
 api:
@@ -45,6 +34,7 @@ ota:
   - platform: esphome
     password: "af02dabd1a628b113fb6ffc6c6a94c17"
 
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -54,14 +44,6 @@ wifi:
 
 captive_portal:
 
-deep_sleep:
-  id: deep_sleep_ctrl
-  run_duration: ${run_time}
-  sleep_duration: 30sec           # Wakes when 5V returns
-  wakeup_pin: GPIO39              # Separate RTC pin for wake
-  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
-
-
 # SPI bus for E-Ink display
 spi:
   clk_pin: GPIO18
@@ -70,7 +52,7 @@ spi:
 # NOTE about GPIO15 warning:
 # GPIO15 is a strapping pin. Using it as CS can be OK if you don't add external pull-ups/downs.
 # If you'd rather avoid the warning, move cs_pin to a safe pin like GPIO5 (and rewire).
-# cs_pin: GPIO5   # <- optional change if you rewire
+# cs_pin: GPIO5
 
 font:
   - file: "fonts/TEMPSITC.TTF"
@@ -101,7 +83,7 @@ image:
     invert_alpha: true
 
 sensor:
-  # Outside Pressure
+  # Outside Pressure (check spelling of your HA entity; “forcast” vs “forecast”)
   - platform: homeassistant
     id: forecast_pressure
     entity_id: sensor.forcast_pressure
@@ -138,7 +120,7 @@ sensor:
     pin: GPIO36
     attenuation: 12db
     internal: true
-    update_interval: 5min     # <- update every 5 minutes
+    update_interval: 5min
     accuracy_decimals: 2
     filters:
       - sliding_window_moving_average:
@@ -173,7 +155,7 @@ time:
     id: home_time
 
 binary_sensor:
-  # Driven by the on_value lambda above
+  # Driven by the copy sensor's on_value lambda above
   - platform: template
     id: voltage_present
     name: "Voltage Present"
@@ -193,12 +175,12 @@ display:
     model: 2.90inv2-r2
     reset_duration: 2ms
     rotation: 90°
-    cs_pin: GPIO15         # keep as-is unless you choose to rewire to GPIO5 (see note above)
+    cs_pin: GPIO15
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
-    full_update_every: 2
-    update_interval: never
+    full_update_every: 5
+    update_interval: 10s          # refresh periodically while 5V keeps us awake
     lambda: |-
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
@@ -224,7 +206,7 @@ display:
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
 
-# Graceful sleep script: final refresh, then a cancellable 30s grace window
+# Graceful sleep script: final refresh, then a cancellable ~30s grace window
 script:
   - id: graceful_sleep
     mode: restart
@@ -235,7 +217,7 @@ script:
       - component.update: epd
       # Give e-paper a moment to settle, counted inside the 30s window
       - delay: 6s
-      # Remaining ~27 seconds of grace, checking each second
+      # Remaining ~24–44 seconds of grace, checking each second
       - repeat:
           count: 44
           then:
@@ -257,7 +239,11 @@ script:
             - logger.log: "Grace elapsed with no 5V -> entering deep sleep."
             - deep_sleep.enter: deep_sleep_ctrl
 
-
+deep_sleep:
+  id: deep_sleep_ctrl
+  sleep_duration: 30sec       # Only used when 5V is gone; wakes when 5V returns
+  wakeup_pin: GPIO39          # Separate RTC pin tied to the divider
+  wakeup_pin_mode: KEEP_AWAKE # Do NOT deep sleep while this pin is HIGH (i.e., 5V present)
 
 # Poll ADC while awake so we can react fast if 5V disappears/returns
 interval:
