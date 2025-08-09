@@ -5,16 +5,9 @@ esphome:
     priority: -100
     then:
       - light.turn_on: awake_led
+      - logger.log: "Boot: waiting for sensors to become ready before first draw, then sleep."
       - component.update: adc_pin_v
       - delay: 200ms
-      - if:
-          condition:
-            binary_sensor.is_off: voltage_present
-          then:
-            - logger.log: "No 5V at boot -> 30s grace, then deep sleep (unless 5V returns)."
-            - script.execute: graceful_sleep
-          else:
-            - logger.log: "5V present at boot -> staying awake."
 
 esp32:
   board: esp32dev
@@ -40,15 +33,9 @@ wifi:
 
 captive_portal:
 
-# SPI bus for E-Ink display
 spi:
   clk_pin: GPIO18
   mosi_pin: GPIO23
-
-# NOTE about GPIO15 warning:
-# GPIO15 is a strapping pin. Using it as CS can be OK if you don't add external pull-ups/downs.
-# If you'd rather avoid the warning, move cs_pin to a safe pin like GPIO5 (and rewire).
-# cs_pin: GPIO5   # <- optional change if you rewire
 
 font:
   - file: "fonts/TEMPSITC.TTF"
@@ -79,51 +66,36 @@ image:
     invert_alpha: true
 
 sensor:
-  # Outside Pressure
   - platform: homeassistant
     id: forecast_pressure
     entity_id: sensor.forcast_pressure
-
-  # Outside Humidity
   - platform: homeassistant
     id: humidity_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_humidity
-
-  # Outdoor Temperature
   - platform: homeassistant
     id: temperature_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_temperature
-
-  # Zach's Office Pressure
   - platform: homeassistant
     id: pressure_printer
     entity_id: sensor.convert_printer_pressure_to_inhg
-
-  # Zach's Office Humidity
   - platform: homeassistant
     id: humidity_printer
     entity_id: sensor.printer_barometer_humidity
-
-  # Zach's Office Temperature
   - platform: homeassistant
     id: temperature_printer
     entity_id: sensor.printer_barometer_temperature
-
-  # --- ADC pin voltage on GPIO36 (after divider) ---
   - platform: adc
     id: adc_pin_v
     name: "ADC Pin Voltage (GPIO36)"
     pin: GPIO36
     attenuation: 12db
     internal: true
-    update_interval: 5min     # <- update every 5 minutes
+    update_interval: 5min
     accuracy_decimals: 2
     filters:
       - sliding_window_moving_average:
           window_size: 10
           send_every: 1
-
-  # --- Reconstructed source voltage (pre-divider) ---
   - platform: copy
     source_id: adc_pin_v
     id: source_voltage
@@ -135,7 +107,6 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            // Hysteresis: ON above 4.0 V, OFF below 3.0 V
             static bool present = false;
             if (!present && x > 4.0) present = true;
             else if (present && x < 3.0) present = false;
@@ -159,11 +130,6 @@ binary_sensor:
     filters:
       - delayed_on: 100ms
       - delayed_off: 300ms
-    # If 5V is lost while we're awake, start 30s grace period
-    on_release:
-      then:
-        - logger.log: "5V lost -> 30s grace, then deep sleep (unless 5V returns)."
-        - script.execute: graceful_sleep
 
   # Gate that turns ON only when all required sensors have valid, non-NaN values
   - platform: template
@@ -171,8 +137,29 @@ binary_sensor:
     name: "Sensors Ready"
     lambda: |-
       return (
+        id(temperature_outside).has_state() && !isnan(id(temperature_outside).state) &&
+        id(humidity_outside).has_state()    && !isnan(id(humidity_outside).state)    &&
+        id(forecast_pressure).has_state()   && !isnan(id(forecast_pressure).state)   &&
+        id(humidity_printer).has_state()    && !isnan(id(humidity_printer).state)    &&
+        id(pressure_printer).has_state()    && !isnan(id(pressure_printer).state)    &&
         id(temperature_printer).has_state() && !isnan(id(temperature_printer).state)
       );
+    on_press:
+      then:
+        - logger.log: "Sensors ready — performing one-time EPaper update."
+        - component.update: epd
+        - if:
+            condition:
+              binary_sensor.is_off: voltage_present
+            then:
+              - logger.log: "5V absent — sleeping after draw."
+              - delay: 8s   # let EPaper finish refreshing
+              - light.turn_off: awake_led
+              - deep_sleep.enter: deep_sleep_ctrl
+            else:
+              - logger.log: "5V present — staying awake."
+              - light.turn_on: awake_led
+
 
 output:
   - platform: gpio
@@ -185,25 +172,34 @@ light:
     id: awake_led
     output: led_pin
 
+interval:
+  - interval: 5min
+    then:
+      - if:
+          condition:
+            and:
+              - binary_sensor.is_on: sensors_ready
+              - binary_sensor.is_on: voltage_present
+          then:
+            - component.update: epd
+
 display:
   - platform: waveshare_epaper
     id: epd
     model: 2.90inv2-r2
     reset_duration: 2ms
     rotation: 90°
-    cs_pin: GPIO15         # keep as-is unless you choose to rewire to GPIO5 (see note above)
+    cs_pin: GPIO15
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
     full_update_every: 5
-    update_interval: 10s
+    update_interval: never
     lambda: |-
-      // Don't draw until sensors are ready
       if (!id(sensors_ready).state) {
         ESP_LOGI("display", "Sensors not ready — skipping EPaper draw");
         return;
       }
-
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
       static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
@@ -212,59 +208,22 @@ display:
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
-
       it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
       it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
       it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+      if (!isnan(id(temperature_printer).state)) {
+        it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
+      } else {
+        it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
+      }
+      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
 
-# Graceful sleep script: final refresh, then a cancellable grace window
-script:
-  - id: graceful_sleep
-    mode: restart
-    then:
-      - logger.log: "Graceful sleep: final refresh, then 30s grace."
-      - component.update: adc_pin_v
-      - if:
-          condition:
-            binary_sensor.is_on: sensors_ready
-          then:
-            - component.update: epd
-          else:
-            - logger.log: "Skipping epd refresh; sensors not ready."
-      - delay: 6s
-      - repeat:
-          count: 14
-          then:
-            - if:
-                condition:
-                  binary_sensor.is_on: voltage_present
-                then:
-                  - logger.log: "5V returned during grace -> cancel sleep."
-                  - script.stop: graceful_sleep
-            - component.update: adc_pin_v
-            - delay: 1s
-      - if:
-          condition:
-            binary_sensor.is_on: voltage_present
-          then:
-            - logger.log: "5V is back at end of grace -> staying awake."
-          else:
-            - logger.log: "Grace elapsed with no 5V -> entering deep sleep."
-            - light.turn_off: awake_led
-            - deep_sleep.enter: deep_sleep_ctrl
-
 deep_sleep:
   id: deep_sleep_ctrl
-  sleep_duration: 30sec           # Wakes when 5V returns
-  wakeup_pin: GPIO39              # Separate RTC pin for wake
-  wakeup_pin_mode: KEEP_AWAKE     # Do NOT sleep while this pin is HIGH (5V present via divider)
-
-# Poll ADC while awake so we can react fast if 5V disappears/returns
-interval:
-  - interval: 5s
-    then:
-      - component.update: adc_pin_v
+  sleep_duration: 30s        # periodic wake when 5V is absent
+  wakeup_pin: GPIO39         # tied to the 5V sense divider
+  wakeup_pin_mode: KEEP_AWAKE  # DO NOT sleep while 5V is present
