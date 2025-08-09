@@ -138,15 +138,6 @@ text_sensor:
       then:
         - script.execute: all_data_received
 
-binary_sensor:
-  - platform: gpio
-    id: epd_busy
-    internal: true
-    pin:
-      number: GPIO4
-      mode: INPUT
-      inverted: false   # if your panel reports LOW while busy, leave this false
-
 time:
   - platform: homeassistant
     id: home_time
@@ -155,11 +146,7 @@ script:
   - id: all_data_received
     then:
       - component.update: epd
-      - wait_until:
-          condition:
-            binary_sensor.is_off: epd_busy   # off = not busy
-          timeout: 30s
-      - delay: 300ms   # tiny extra cushion
+      - delay: 5s        # give the e-paper time to finish
       - script.execute: enter_sleep
 
   - id: enter_sleep
