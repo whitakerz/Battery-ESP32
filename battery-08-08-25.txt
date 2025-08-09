@@ -173,7 +173,13 @@ light:
     output: led_pin
 
 interval:
-  - interval: 5min
+  # Poll ADC fast so voltage_present flips quickly when 5V is removed
+  - interval: 1s
+    then:
+      - component.update: adc_pin_v
+
+  # Update the E-Paper every 2 minutes only while 5V is present
+  - interval: 2min
     then:
       - if:
           condition:
