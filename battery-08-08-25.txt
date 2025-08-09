@@ -6,9 +6,9 @@ esphome:
   name: battery
   friendly_name: Battery
   on_boot:
-    # Decide immediately on boot: sleep unless 5V is present
     priority: -100
     then:
+      - light.turn_on: awake_led
       - component.update: adc_pin_v
       - delay: 200ms
       - if:
@@ -168,6 +168,16 @@ binary_sensor:
       then:
         - logger.log: "5V lost -> 30s grace, then deep sleep (unless 5V returns)."
         - script.execute: graceful_sleep
+output:
+  - platform: gpio
+    pin: GPIO22
+    id: led_pin
+
+light:
+  - platform: binary
+    name: "Awake LED"
+    id: awake_led
+    output: led_pin
 
 display:
   - platform: waveshare_epaper
@@ -212,12 +222,9 @@ script:
     mode: restart
     then:
       - logger.log: "Graceful sleep: final refresh, then 30s grace."
-      # One last data + display refresh
       - component.update: adc_pin_v
       - component.update: epd
-      # Give e-paper a moment to settle, counted inside the 30s window
       - delay: 6s
-      # Remaining ~27 seconds of grace, checking each second
       - repeat:
           count: 44
           then:
@@ -229,7 +236,6 @@ script:
                   - script.stop: graceful_sleep
             - component.update: adc_pin_v
             - delay: 1s
-      # Final check before sleeping
       - if:
           condition:
             binary_sensor.is_on: voltage_present
@@ -237,6 +243,7 @@ script:
             - logger.log: "5V is back at end of grace -> staying awake."
           else:
             - logger.log: "Grace elapsed with no 5V -> entering deep sleep."
+            - light.turn_off: awake_led
             - deep_sleep.enter: deep_sleep_ctrl
 
 deep_sleep:
