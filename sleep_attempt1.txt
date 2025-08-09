@@ -28,7 +28,7 @@ api:
 
 ota:
   - platform: esphome
-    password: "af02dabd1a628b113fb6ffc6c6a94c17"
+    password: "af02dabd1a628b113fb6ffc6a94c17"
 
 wifi:
   ssid: !secret wifi_ssid
@@ -124,19 +124,29 @@ sensor:
       - sliding_window_moving_average:
           window_size: 10
           send_every: 1
-
+    # Actions to perform once data for the last sensor has been received
     #refresh
-    on_value: # Actions to perform once data for the last sensor has been received
+    on_value:
       then:
-        - script.execute: all_data_received
+        - if:
+            condition:
+              lambda: |-
+                return (
+                  !isnan(id(temperature_outside).state) &&
+                  !isnan(id(humidity_outside).state) &&
+                  !isnan(id(forecast_pressure).state) &&
+                  !isnan(id(pressure_printer).state) &&
+                  !isnan(id(humidity_printer).state) &&
+                  !isnan(id(temperature_printer).state) &&
+                  id(forecast_condition).has_state()
+                );
+            then:
+              - script.execute: all_data_received
 
 text_sensor:
   - platform: homeassistant
     id: forecast_condition
     entity_id: weather.forecast_home
-    on_value:
-      then:
-        - script.execute: all_data_received
 
 time:
   - platform: homeassistant
