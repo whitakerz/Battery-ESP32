@@ -1,14 +1,14 @@
-#code parts used from
-#https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
-#https://github.com/kotope/esphome_eink_dashboard
-#https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
-#https://github.com/hanspeda/esphome_homeassistant_display/blob/aa3692f4f687b46d6d0564f673cf51bfa3225d60/esphome-web-399610.yaml
+# code parts used from
+# https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
+# https://github.com/kotope/esphome_eink_dashboard
+# https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
+# https://github.com/hanspeda/esphome_homeassistant_display/blob/aa3692f4f687b46d6d0564f673cf51bfa3225d60/esphome-web-399610.yaml
 
-#run and sleep times
+# run and sleep times
 substitutions:
-  run_time: 1min #can be as long as needed to get data 
-  sleep_time: 20min # normal sleep time
-  night_sleep_time: 7h # 1st sleep time after midnight
+  run_time: 1min         # can be as long as needed to get data
+  sleep_time: 20min      # normal sleep time
+  night_sleep_time: 7h   # 1st sleep time after midnight
 
 esphome:
   name: battery
@@ -28,7 +28,7 @@ api:
 
 ota:
   - platform: esphome
-    password: "af02dabd1a628b113fb6ffc6a94c17"
+    password: "af02dabd1a628b113fb6ffc6c6a94c17"
 
 wifi:
   ssid: !secret wifi_ssid
@@ -40,11 +40,12 @@ wifi:
 captive_portal:
 
 deep_sleep:
-  run_duration: ${run_time} 
+  run_duration: ${run_time}
   sleep_duration: ${sleep_time}
   id: deep_sleep_1
   esp32_ext1_wakeup:
-    pins: GPIO39
+    pins:
+      - GPIO39
     mode: ALL_LOW
 
 font:
@@ -63,12 +64,14 @@ image:
     id: icon_partlycloudy
     type: BINARY
     resize: 24x24
-    invert_alpha: true
+    invert: true
+
   - file: "icons/House.bmp"
     id: icon_inside
     type: BINARY
     resize: 34x34
-    invert_alpha: false
+    # invert: false  # omit if not needed
+
   - file: "icons/Outside.bmp"
     id: icon_tree
     type: BINARY
@@ -81,78 +84,89 @@ spi:
   mosi_pin: GPIO23
 
 sensor:
-  # Outside Pressure
+  # Outside Pressure (fix spelling to match HA entity)
   - platform: homeassistant
     id: forecast_pressure
-    entity_id: sensor.forcast_pressure
+    entity_id: sensor.forecast_pressure
+    on_value:
+      then:
+        - script.execute: try_render
 
   # Outside Humidity
   - platform: homeassistant
     id: humidity_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_humidity
+    on_value:
+      then:
+        - script.execute: try_render
 
   # Outdoor Temperature
   - platform: homeassistant
     id: temperature_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_temperature
+    on_value:
+      then:
+        - script.execute: try_render
 
   # Zach's Office Pressure
   - platform: homeassistant
     id: pressure_printer
     entity_id: sensor.convert_printer_pressure_to_inhg
+    on_value:
+      then:
+        - script.execute: try_render
 
   # Zach's Office Humidity
   - platform: homeassistant
     id: humidity_printer
     entity_id: sensor.printer_barometer_humidity
+    on_value:
+      then:
+        - script.execute: try_render
 
   # Zach's Office Temperature
   - platform: homeassistant
     id: temperature_printer
     entity_id: sensor.printer_barometer_temperature
-
-  # --- ADC pin voltage on GPIO36 (after divider) ---
-  - platform: adc
-    id: adc_pin_v
-    name: "ADC Pin Voltage (GPIO36)"
-    pin: GPIO36
-    attenuation: 12db
-    internal: true
-    update_interval: 5min
-    accuracy_decimals: 2
-    filters:
-      - sliding_window_moving_average:
-          window_size: 10
-          send_every: 1
-    # Actions to perform once data for the last sensor has been received
-    #refresh
     on_value:
       then:
-        - if:
-            condition:
-              lambda: |-
-                return (
-                  !isnan(id(temperature_outside).state) &&
-                  !isnan(id(humidity_outside).state) &&
-                  !isnan(id(forecast_pressure).state) &&
-                  !isnan(id(pressure_printer).state) &&
-                  !isnan(id(humidity_printer).state) &&
-                  !isnan(id(temperature_printer).state) &&
-                  id(forecast_condition).has_state()
-                );
-            then:
-              - script.execute: all_data_received
+        - script.execute: try_render
 
 text_sensor:
   - platform: homeassistant
     id: forecast_condition
     entity_id: weather.forecast_home
+    on_value:
+      then:
+        - script.execute: try_render
 
 time:
   - platform: homeassistant
     id: home_time
 
 script:
+  # Called by each HA sensor/text_sensor when it updates.
+  # Proceeds only when ALL numeric sensors are valid and time is valid.
+  - id: try_render
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto t = id(home_time).now();
+              if (!t.is_valid()) return false;
+
+              // Ensure all numeric sensors have values
+              return (
+                !isnan(id(forecast_pressure).state) &&
+                !isnan(id(humidity_outside).state) &&
+                !isnan(id(temperature_outside).state) &&
+                !isnan(id(pressure_printer).state) &&
+                !isnan(id(humidity_printer).state) &&
+                !isnan(id(temperature_printer).state)
+              );
+          then:
+            - script.execute: all_data_received
+
   - id: all_data_received
     then:
       - component.update: epd
@@ -183,7 +197,7 @@ script:
 display:
   - platform: waveshare_epaper
     id: epd
-    model: 2.90inv2-r2
+    model: 2.90inV2
     reset_duration: 2ms
     rotation: 90°
     cs_pin: GPIO15
@@ -191,7 +205,7 @@ display:
     busy_pin: GPIO4
     reset_pin: GPIO16
     full_update_every: 2
-    update_interval: never
+    update_interval: 5s
     lambda: |-
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
