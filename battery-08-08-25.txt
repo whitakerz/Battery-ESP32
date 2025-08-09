@@ -185,36 +185,37 @@ display:
     model: 2.90inv2-r2
     reset_duration: 2ms
     rotation: 90°
-    cs_pin: GPIO15         # keep as-is unless you choose to rewire to GPIO5 (see note above)
+    cs_pin: GPIO15
     dc_pin: GPIO17
     busy_pin: GPIO4
     reset_pin: GPIO16
     full_update_every: 5
     update_interval: 10s
     lambda: |-
-      static const int IMAGE_HORIZONTAL = 10;
-      static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
-      static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
-      static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
-      static const int OUTSIDE_TEMP_VERT = 15;
-      static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
-      static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
-      static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
-
-      it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
-      it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
-      it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
-      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
-      it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+      // Only update if printer temperature is valid
       if (!isnan(id(temperature_printer).state)) {
-        it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
-      } else {
-        it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
-      }
-      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state); // mmHg
+        static const int IMAGE_HORIZONTAL = 10;
+        static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
+        static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
+        static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
+        static const int OUTSIDE_TEMP_VERT = 15;
+        static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
+        static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
+        static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
 
-      it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
-      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
+        it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
+        it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
+        it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
+        it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
+        it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+        it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
+        it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
+
+        it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
+        it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
+      } else {
+        ESP_LOGI("display", "Printer temperature NaN — skipping screen update");
+      }
 
 # Graceful sleep script: final refresh, then a cancellable 30s grace window
 script:
