@@ -1,3 +1,11 @@
+#code parts used from
+#https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
+#https://github.com/kotope/esphome_eink_dashboard
+#https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
+#https://github.com/hanspeda/esphome_homeassistant_display.git
+#chatgpt.com #but you already knew that when you looked at it. 
+
+
 esphome:
   name: battery
   friendly_name: Battery
@@ -44,7 +52,7 @@ font:
   - file: "fonts/GILSANUB.TTF"
     id: GILSANUB
     size: 38
-  - file: "fonts/GILSANUB.TTF"
+  - file: "fonts/TEMPSITC.TTF"
     id: small
     size: 14
 
@@ -92,10 +100,10 @@ sensor:
     internal: true
     update_interval: 5min
     accuracy_decimals: 2
-    filters:
-      - sliding_window_moving_average:
-          window_size: 3
-          send_every: 1
+#    filters:
+#      - sliding_window_moving_average:
+#          window_size: 3
+#          send_every: 1
   - platform: copy
     source_id: adc_pin_v
     id: source_voltage
@@ -220,7 +228,7 @@ display:
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
-      it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%H:%M:%S", id(home_time).now());
+      it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
       it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
@@ -236,6 +244,6 @@ display:
 
 deep_sleep:
   id: deep_sleep_ctrl
-  sleep_duration: 5min        # periodic wake when 5V is absent
+  sleep_duration: 30s        # periodic wake when 5V is absent
   wakeup_pin: GPIO39         # tied to the 5V sense divider
   wakeup_pin_mode: KEEP_AWAKE  # DO NOT sleep while 5V is present
