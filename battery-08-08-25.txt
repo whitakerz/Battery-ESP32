@@ -27,7 +27,6 @@ esp32:
   framework:
     type: esp-idf
 
-
 logger:
   level: DEBUG
 
@@ -146,6 +145,33 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 1.36
+  
+  - platform: copy
+    source_id: battery_voltage
+    id: battery_percent
+    name: "Battery %"
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    filters:
+      # Nonlinear-ish LiPo curve (tweak to your cell)
+      - calibrate_linear:
+          - 4.20 -> 100
+          - 4.00 -> 85
+          - 3.85 -> 60
+          - 3.80 -> 50
+          - 3.70 -> 25
+          - 3.50 -> 5
+          - 3.30 -> 0
+      # Clamp and smooth
+      - lambda: |-
+          if (x < 0) x = 0;
+          if (x > 100) x = 100;
+          return x;
+      - sliding_window_moving_average:
+          window_size: 4
+          send_every: 1    
 
 text_sensor:
   - platform: homeassistant
@@ -206,7 +232,7 @@ script:
               return (time.hour < 6); 
           then:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
-  ### THIS IS LOGGING IN HOME ASSISTANT ###
+            ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
                 event: esphome.battery_sleep
                 data:
@@ -215,13 +241,13 @@ script:
                   duration: "${night_sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
-  ### TO HERE ###
+            ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
                 sleep_duration: ${night_sleep_time}
           else:
             - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
-  ### THIS IS LOGGING IN HOME ASSISTANT ###
+            ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
                 event: esphome.battery_sleep
                 data:
@@ -230,7 +256,7 @@ script:
                   duration: "${sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
-   ### TO HERE ###
+            ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
                 sleep_duration: ${sleep_time}
@@ -288,6 +314,11 @@ display:
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
+      static const int BATT_X = 230;   // adjust to taste for your layout
+      static const int BATT_Y = 2;
+      static const int BATT_W = 30;
+      static const int BATT_H = 12;
+      
       it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
@@ -300,7 +331,42 @@ display:
       }
       it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
-      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
+      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT, id(icon_tree));
+
+      // ---- Battery readout (top-right) ----
+
+      // Outline box
+      it.rectangle(BATT_X, BATT_Y, BATT_W, BATT_H);
+      // Battery "nub"
+      it.filled_rectangle(BATT_X + BATT_W, BATT_Y + (BATT_H/3), 4, BATT_H/3);
+
+      // Fill level bar
+      float pct = id(battery_percent).has_state() ? id(battery_percent).state : NAN;
+      float v   = id(battery_voltage).has_state() ? id(battery_voltage).state : NAN;
+
+      // inner bar area (with small padding)
+      const int PAD = 3;
+      int inner_w = BATT_W - 2*PAD;
+      int inner_h = BATT_H - 2*PAD;
+      it.rectangle(BATT_X + PAD, BATT_Y + PAD, inner_w, inner_h);
+
+      if (!isnan(pct)) {
+        int fill_w = (int) roundf(inner_w * (pct / 100.0f));
+        if (fill_w < 0) fill_w = 0;
+        it.filled_rectangle(BATT_X + PAD, BATT_Y + PAD, fill_w, inner_h);
+      }
+
+      /* // Text: "xx%  x.xxV"
+      if (!isnan(pct) && !isnan(v)) {
+        it.printf(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "%.0f%%  %.2fV", pct, v);
+      } else {
+        it.print(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "--%  --.--V");
+      } */
+
+      // Charging indicator if 5V present
+      if (id(voltage_present).state) {
+        it.print(BATT_X + BATT_W + 10, BATT_Y + (BATT_H/2), id(small), TextAlign::CENTER_LEFT, "+5V");
+      }
 
 deep_sleep:
   id: deep_sleep_ctrl
