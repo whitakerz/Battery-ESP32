@@ -1,3 +1,15 @@
+#code parts used from
+#https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
+#https://github.com/kotope/esphome_eink_dashboard
+#https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
+#https://github.com/hanspeda/esphome_homeassistant_display.git
+#chatgpt.com
+
+substitutions:
+  run_time: 1min #can be as long as needed to get data 
+  sleep_time: 30s # normal sleep time
+  night_sleep_time: 9h # 1st sleep time after midnight
+
 esphome:
   name: battery
   friendly_name: Battery
@@ -99,7 +111,7 @@ sensor:
   - platform: copy
     source_id: adc_5v_raw
     id: source_voltage
-    name: "5V (pre-divider)"
+    name: "5V"
     unit_of_measurement: "V"
     accuracy_decimals: 2
     filters:
@@ -146,6 +158,7 @@ binary_sensor:
   - platform: template
     id: voltage_present
     name: "Voltage Present"
+    internal: true
     device_class: power
     filters:
       - delayed_on: 100ms
@@ -158,14 +171,10 @@ binary_sensor:
 
   - platform: template
     id: sensors_ready
+    internal: true
     name: "Sensors Ready"
     lambda: |-
       return (
-        id(temperature_outside).has_state() && !isnan(id(temperature_outside).state) &&
-        id(humidity_outside).has_state()    && !isnan(id(humidity_outside).state)    &&
-        id(forecast_pressure).has_state()   && !isnan(id(forecast_pressure).state)   &&
-        id(humidity_printer).has_state()    && !isnan(id(humidity_printer).state)    &&
-        id(pressure_printer).has_state()    && !isnan(id(pressure_printer).state)    &&
         id(temperature_printer).has_state() && !isnan(id(temperature_printer).state)
       );
     on_press:
@@ -179,10 +188,32 @@ binary_sensor:
               - logger.log: "5V absent — sleeping after draw."
               - delay: 5s
               - light.turn_off: awake_led
-              - deep_sleep.enter: deep_sleep_ctrl
+              - script.execute: enter_sleep
             else:
               - logger.log: "5V present — staying awake."
               - light.turn_on: awake_led
+
+script:
+  - id: enter_sleep
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto time = id(home_time).now();   // <- was id(ntp)
+              if (!time.is_valid()) {
+                return false;
+              }
+              return (time.hour < 6);
+          then:
+            - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
+            - deep_sleep.enter:
+                id: deep_sleep_ctrl         # see next fix
+                sleep_duration: ${night_sleep_time}
+          else:
+            - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
+            - deep_sleep.enter:
+                id: deep_sleep_ctrl         # see next fix
+                sleep_duration: ${sleep_time}
 
 output:
   - platform: gpio
@@ -253,6 +284,7 @@ display:
 
 deep_sleep:
   id: deep_sleep_ctrl
+  run_duration: 1min         # optional safety net
   sleep_duration: 60s
   wakeup_pin: GPIO39
   wakeup_pin_mode: KEEP_AWAKE
