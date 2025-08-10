@@ -1,9 +1,3 @@
-# code parts used from
-# https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
-# https://github.com/kotope/esphome_eink_dashboard
-# https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
-# https://github.com/hanspeda/esphome_homeassistant_display/blob/aa3692f4f687b46d6d0564f673cf51bfa3225d60/esphome-web-399610.yaml
-
 # run and sleep times
 substitutions:
   run_time: 1min         # can be as long as needed to get data
@@ -20,9 +14,15 @@ esphome:
   name: battery
   friendly_name: Battery
   on_boot:
-    priority: -100
     then:
+      - component.update: adc_pin_v
+      - delay: 50ms
+      - component.update: adc_pin_v
+      - logger.log: "Boot/wake — lighting LED immediately."
       - output.turn_on: awake_led
+      - component.update: adc_pin_v
+      - delay: 75ms
+      - logger.log: "Boot: waiting for sensors to become ready before first draw."
 
 esp32:
   board: esp32dev
@@ -80,7 +80,6 @@ image:
     id: icon_inside
     type: BINARY
     resize: 34x34
-    # invert: false  # omit if not needed
 
   - file: "icons/Outside.bmp"
     id: icon_tree
@@ -94,7 +93,21 @@ spi:
   mosi_pin: GPIO23
 
 sensor:
-  # Outside Pressure (fix spelling to match HA entity)
+  # ADC voltage reading (restored)
+  - platform: adc
+    id: adc_pin_v
+    name: "ADC Pin Voltage (GPIO36)"
+    pin: GPIO36
+    attenuation: 12db
+    internal: true
+    update_interval: 5min
+    accuracy_decimals: 2
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+  # Outside Pressure
   - platform: homeassistant
     id: forecast_pressure
     entity_id: sensor.forecast_pressure
@@ -164,8 +177,6 @@ script:
             lambda: |-
               auto t = id(home_time).now();
               if (!t.is_valid()) return false;
-
-              // Ensure all numeric sensors have values
               return (
                 !isnan(id(temperature_outside).state) &&
                 !isnan(id(humidity_printer).state)
@@ -201,7 +212,6 @@ script:
                 id: deep_sleep_1
                 sleep_duration: ${sleep_time}
 
-
 display:
   - platform: waveshare_epaper
     id: epd
@@ -234,7 +244,6 @@ display:
       } else {
         it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
       }
-      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state); // mmHg
-
+      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT + 5, id(icon_tree));
