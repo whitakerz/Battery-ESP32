@@ -1,11 +1,3 @@
-#code parts used from
-#https://github.com/esphome/feature-requests/issues/1109#issuecomment-1059808670
-#https://github.com/kotope/esphome_eink_dashboard
-#https://gist.github.com/Plawasan/4ae826b05aaa7812f3a191714ca47a50
-#https://github.com/hanspeda/esphome_homeassistant_display.git
-#chatgpt.com #but you already knew that when you looked at it. 
-
-
 esphome:
   name: battery
   friendly_name: Battery
@@ -14,7 +6,8 @@ esphome:
     then:
       - light.turn_on: awake_led
       - logger.log: "Boot: waiting for sensors to become ready before first draw, then sleep."
-      - component.update: adc_pin_v
+      - component.update: adc_5v_raw
+      - component.update: adc_batt_raw
       - delay: 200ms
 
 esp32:
@@ -92,22 +85,21 @@ sensor:
   - platform: homeassistant
     id: temperature_printer
     entity_id: sensor.printer_barometer_temperature
+  
+  # ----- 5V sense (pre-divider) -----
   - platform: adc
-    id: adc_pin_v
+    id: adc_5v_raw
     name: "ADC Pin Voltage (GPIO36)"
     pin: GPIO36
     attenuation: 12db
-    internal: false
     update_interval: 5min
-    accuracy_decimals: 2
-#    filters:
-#      - sliding_window_moving_average:
-#          window_size: 3
-#          send_every: 1
+    accuracy_decimals: 3
+    internal: true
+
   - platform: copy
-    source_id: adc_pin_v
+    source_id: adc_5v_raw
     id: source_voltage
-    name: "Source Voltage (pre-divider)"
+    name: "5V (pre-divider)"
     unit_of_measurement: "V"
     accuracy_decimals: 2
     filters:
@@ -120,6 +112,27 @@ sensor:
             else if (present && x < 3.0) present = false;
             id(voltage_present).publish_state(present);
 
+  # ----- LiPo battery voltage -----
+  - platform: adc
+    id: adc_batt_raw
+    name: "ADC Pin Voltage (GPIO32)"
+    pin: GPIO32
+    attenuation: 12db
+    update_interval: 5min
+    accuracy_decimals: 3
+    internal: true
+
+  - platform: copy
+    source_id: adc_batt_raw
+    id: battery_voltage
+    name: "Battery Voltage"
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    filters:
+      - multiply: 1.36
+
 text_sensor:
   - platform: homeassistant
     id: forecast_condition
@@ -130,7 +143,6 @@ time:
     id: home_time
 
 binary_sensor:
-  # Driven by the on_value lambda above
   - platform: template
     id: voltage_present
     name: "Voltage Present"
@@ -144,8 +156,6 @@ binary_sensor:
         - light.turn_off: awake_led
         - deep_sleep.enter: deep_sleep_ctrl
 
-
-  # Gate that turns ON only when all required sensors have valid, non-NaN values
   - platform: template
     id: sensors_ready
     name: "Sensors Ready"
@@ -167,13 +177,12 @@ binary_sensor:
               binary_sensor.is_off: voltage_present
             then:
               - logger.log: "5V absent — sleeping after draw."
-              - delay: 5s   # let EPaper finish refreshing
+              - delay: 5s
               - light.turn_off: awake_led
               - deep_sleep.enter: deep_sleep_ctrl
             else:
               - logger.log: "5V present — staying awake."
               - light.turn_on: awake_led
-
 
 output:
   - platform: gpio
@@ -187,12 +196,11 @@ light:
     output: led_pin
 
 interval:
-  # Poll ADC fast so voltage_present flips quickly when 5V is removed
   - interval: 5s
     then:
-      - component.update: adc_pin_v
+      - component.update: adc_5v_raw
+      - component.update: adc_batt_raw
 
-  # Update the E-Paper every 2 minutes only while 5V is present
   - interval: 2min
     then:
       - if:
@@ -245,6 +253,6 @@ display:
 
 deep_sleep:
   id: deep_sleep_ctrl
-  sleep_duration: 60s        # periodic wake when 5V is absent
-  wakeup_pin: GPIO39         # tied to the 5V sense divider
-  wakeup_pin_mode: KEEP_AWAKE  # DO NOT sleep while 5V is present
+  sleep_duration: 60s
+  wakeup_pin: GPIO39
+  wakeup_pin_mode: KEEP_AWAKE
