@@ -8,7 +8,7 @@
 substitutions:
   run_time: 1min #can be as long as needed to get data 
   sleep_time: 1min # normal sleep time
-  night_sleep_time: 9h # 1st sleep time after midnight
+  night_sleep_time: 7h # 1st sleep time after 10pm
 
 esphome:
   name: battery
@@ -229,7 +229,7 @@ script:
             lambda: |-
               auto time = id(home_time).now();
               if (!time.is_valid()) return false;
-              return (time.hour < 6); 
+              return (time.hour > 22); 
           then:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
