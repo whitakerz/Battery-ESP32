@@ -220,12 +220,12 @@ display:
         ESP_LOGI("display", "Sensors not ready — skipping EPaper draw");
         return;
       }
-      static const int TESTING_SPACER = 5
+      static const int TESTING_SPACER = 5;
       static const int IMAGE_HORIZONTAL = 10;
       static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
       static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
       static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
-      static const int OUTSIDE_TEMP_VERT = 15 + TESTING_SPACER
+      static const int OUTSIDE_TEMP_VERT = 15 + TESTING_SPACER;
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
@@ -245,6 +245,6 @@ display:
 
 deep_sleep:
   id: deep_sleep_ctrl
-  sleep_duration: 30s        # periodic wake when 5V is absent
+  sleep_duration: 60s        # periodic wake when 5V is absent
   wakeup_pin: GPIO39         # tied to the 5V sense divider
   wakeup_pin_mode: KEEP_AWAKE  # DO NOT sleep while 5V is present
