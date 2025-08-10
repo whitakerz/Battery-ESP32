@@ -7,7 +7,7 @@
 
 substitutions:
   run_time: 1min #can be as long as needed to get data 
-  sleep_time: 30s # normal sleep time
+  sleep_time: 1min # normal sleep time
   night_sleep_time: 9h # 1st sleep time after midnight
 
 esphome:
@@ -27,7 +27,9 @@ esp32:
   framework:
     type: esp-idf
 
+
 logger:
+  level: DEBUG
 
 api:
   encryption:
@@ -199,20 +201,38 @@ script:
       - if:
           condition:
             lambda: |-
-              auto time = id(home_time).now();   // <- was id(ntp)
-              if (!time.is_valid()) {
-                return false;
-              }
-              return (time.hour < 6);
+              auto time = id(home_time).now();
+              if (!time.is_valid()) return false;
+              return (time.hour < 6); 
           then:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
+  ### THIS IS LOGGING IN HOME ASSISTANT ###
+            - homeassistant.event:
+                event: esphome.battery_sleep
+                data:
+                  device: battery
+                  reason: "night"
+                  duration: "${night_sleep_time}"
+                  voltage: !lambda 'return id(battery_voltage).state;'
+                  now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+  ### TO HERE ###
             - deep_sleep.enter:
-                id: deep_sleep_ctrl         # see next fix
+                id: deep_sleep_ctrl
                 sleep_duration: ${night_sleep_time}
           else:
             - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
+  ### THIS IS LOGGING IN HOME ASSISTANT ###
+            - homeassistant.event:
+                event: esphome.battery_sleep
+                data:
+                  device: battery
+                  reason: "day"
+                  duration: "${sleep_time}"
+                  voltage: !lambda 'return id(battery_voltage).state;'
+                  now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+   ### TO HERE ###
             - deep_sleep.enter:
-                id: deep_sleep_ctrl         # see next fix
+                id: deep_sleep_ctrl
                 sleep_duration: ${sleep_time}
 
 output:
