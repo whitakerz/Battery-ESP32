@@ -7,7 +7,7 @@
 
 substitutions:
   run_time: 1min #can be as long as needed to get data 
-  sleep_time: 1min # normal sleep time
+  sleep_time: 15min # normal sleep time
   night_sleep_time: 7h # 1st sleep time after 10pm
 
 esphome:
@@ -157,7 +157,7 @@ sensor:
     filters:
       # Nonlinear-ish LiPo curve (tweak to your cell)
       - calibrate_linear:
-          - 4.20 -> 100
+          - 4.18 -> 100
           - 4.00 -> 85
           - 3.85 -> 60
           - 3.80 -> 50
@@ -229,7 +229,7 @@ script:
             lambda: |-
               auto time = id(home_time).now();
               if (!time.is_valid()) return false;
-              return (time.hour > 22); 
+              return (time.hour >= 22); 
           then:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
@@ -314,10 +314,7 @@ display:
       static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
-      static const int BATT_X = 230;   // adjust to taste for your layout
-      static const int BATT_Y = 2;
-      static const int BATT_W = 30;
-      static const int BATT_H = 12;
+
       
       it.strftime(5, 2, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
@@ -333,7 +330,15 @@ display:
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT, id(icon_tree));
 
+      
+      
+      
+      
       // ---- Battery readout (top-right) ----
+      static const int BATT_X = 250;   // adjust to taste for your layout
+      static const int BATT_Y = 2;
+      static const int BATT_W = 30;
+      static const int BATT_H = 12;
 
       // Outline box
       it.rectangle(BATT_X, BATT_Y, BATT_W, BATT_H);
@@ -365,7 +370,7 @@ display:
 
       // Charging indicator if 5V present
       if (id(voltage_present).state) {
-        it.print(BATT_X + BATT_W + 10, BATT_Y + (BATT_H/2), id(small), TextAlign::CENTER_LEFT, "+5V");
+        it.print(BATT_X - BATT_W, BATT_Y + (BATT_H/2), id(small), TextAlign::CENTER_LEFT, "+5V");
       }
 
 deep_sleep:
