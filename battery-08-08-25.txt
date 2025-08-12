@@ -7,7 +7,7 @@
 
 substitutions:
   run_time: 1min #can be as long as needed to get data 
-  sleep_time: 15min # normal sleep time
+  sleep_time: 2min # normal sleep time
   night_sleep_time: 7h # 1st sleep time after 10pm
 
 esphome:
@@ -41,6 +41,10 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.7.103 # 👈 Replace with your desired static IP
+    gateway: 192.168.7.1     # 👈 Replace with your router's IP
+    subnet: 255.255.255.0    # 👈 Your network's subnet mask
   ap:
     ssid: "Battery Fallback Hotspot"
     password: "BDVDN7O0KT7E"
@@ -78,6 +82,11 @@ image:
     type: BINARY
     resize: 42x42
     invert_alpha: true
+
+text_sensor:
+  - platform: homeassistant
+    id: forecast_condition
+    entity_id: weather.forecast_home
 
 sensor:
   - platform: homeassistant
@@ -172,11 +181,6 @@ sensor:
       - sliding_window_moving_average:
           window_size: 4
           send_every: 1    
-
-text_sensor:
-  - platform: homeassistant
-    id: forecast_condition
-    entity_id: weather.forecast_home
 
 time:
   - platform: homeassistant
@@ -273,10 +277,10 @@ light:
     output: led_pin
 
 interval:
-  - interval: 5s
-    then:
-      - component.update: adc_5v_raw
-      - component.update: adc_batt_raw
+  #- interval: 5s
+  #  then:
+  #    - component.update: adc_5v_raw
+  #    - component.update: adc_batt_raw
 
   - interval: 2min
     then:
