@@ -32,7 +32,7 @@ logger:
 
 api:
   encryption:
-    key: !secret batapi
+    key: "r7yzwcrG9tTvPOK1JQ70AMV0LdOxOtCMz4fvfe8zGss="
 
 ota:
   - platform: esphome
