@@ -382,7 +382,7 @@ display:
 
 deep_sleep:
   id: deep_sleep_ctrl
-  run_duration: 1min         # optional safety net
-  sleep_duration: 60s
+  run_duration: ${run_time}
+  sleep_duration: ${sleep_time}
   wakeup_pin: GPIO39
   wakeup_pin_mode: KEEP_AWAKE
