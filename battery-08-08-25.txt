@@ -92,7 +92,7 @@ text_sensor:
 sensor:
   - platform: homeassistant
     id: forecast_pressure
-    entity_id: sensor.forcast_pressure
+    entity_id: sensor.forecast_pressure_mmhg
   - platform: homeassistant
     id: humidity_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_humidity
@@ -101,7 +101,7 @@ sensor:
     entity_id: sensor.indoor_outdoor_meter_0a71_temperature
   - platform: homeassistant
     id: pressure_printer
-    entity_id: sensor.convert_printer_pressure_to_inhg
+    entity_id: sensor.printer_barometer_pressure
   - platform: homeassistant
     id: humidity_printer
     entity_id: sensor.printer_barometer_humidity
@@ -327,14 +327,14 @@ display:
       it.strftime(5, 110, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
-      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
+      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(forecast_pressure).state);
       it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
       if (!isnan(id(temperature_printer).state)) {
         it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
       } else {
         it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
       }
-      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
+      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(pressure_printer).state);
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT, id(icon_tree));
 
