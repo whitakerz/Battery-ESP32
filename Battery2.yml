@@ -11,8 +11,8 @@ substitutions:
   night_sleep_time: 8h # 1st sleep time after 10pm
 
 esphome:
-  name: battery
-  friendly_name: Battery
+  name: battery2
+  friendly_name: Battery2
   on_boot:
     priority: -100
     then:
@@ -33,7 +33,7 @@ logger:
 
 api:
   encryption:
-    key: !secret batapi
+    key: !secret bat2api
 
 ota:
   - platform: esphome
@@ -42,10 +42,7 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  manual_ip:
-    static_ip: 192.168.7.103 # 👈 Replace with your desired static IP
-    gateway: 192.168.7.1     # 👈 Replace with your router's IP
-    subnet: 255.255.255.0    # 👈 Your network's subnet mask
+
   ap:
     ssid: "Battery Fallback Hotspot"
     password: "BDVDN7O0KT7E"
@@ -92,7 +89,7 @@ text_sensor:
 sensor:
   - platform: homeassistant
     id: forecast_pressure
-    entity_id: sensor.forcast_pressure
+    entity_id: sensor.forecast_pressure_mmhg
   - platform: homeassistant
     id: humidity_outside
     entity_id: sensor.indoor_outdoor_meter_0a71_humidity
@@ -101,7 +98,7 @@ sensor:
     entity_id: sensor.indoor_outdoor_meter_0a71_temperature
   - platform: homeassistant
     id: pressure_printer
-    entity_id: sensor.convert_printer_pressure_to_inhg
+    entity_id: sensor.printer_barometer_pressure
   - platform: homeassistant
     id: humidity_printer
     entity_id: sensor.printer_barometer_humidity
@@ -183,7 +180,6 @@ sensor:
           window_size: 4
           send_every: 1    
 
-
 time:
   - platform: homeassistant
     id: home_time
@@ -240,13 +236,14 @@ script:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
-                event: esphome.battery_sleep
+                event: esphome.battery2_sleep
                 data:
                   device: battery
                   reason: "night"
                   duration: "${night_sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+
             ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
@@ -255,13 +252,14 @@ script:
             - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
-                event: esphome.battery_sleep
+                event: esphome.battery2_sleep
                 data:
                   device: battery
                   reason: "day"
                   duration: "${sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+
             ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
@@ -279,11 +277,6 @@ light:
     output: led_pin
 
 interval:
-  #- interval: 5s
-  #  then:
-  #    - component.update: adc_5v_raw
-  #    - component.update: adc_batt_raw
-
   - interval: 2min
     then:
       - if:
@@ -301,7 +294,7 @@ display:
     id: epd
     model: 2.90inv2-r2
     reset_duration: 2ms
-    rotation: 90°
+    rotation: 270°
     cs_pin: GPIO15
     dc_pin: GPIO17
     busy_pin: GPIO4
@@ -323,27 +316,22 @@ display:
       static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
       static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
 
-      
       it.strftime(5, 110, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
       it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
       it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
-      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(forecast_pressure).state);
+      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(forecast_pressure).state);
       it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
       if (!isnan(id(temperature_printer).state)) {
         it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
       } else {
         it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
       }
-      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.1f", id(pressure_printer).state);
+      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(pressure_printer).state);
       it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
       it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT, id(icon_tree));
 
-      
-      
-      
-      
       // ---- Battery readout (top-right) ----
-      static const int BATT_X = 250;   // adjust to taste for your layout
+      static const int BATT_X = 250;
       static const int BATT_Y = 2;
       static const int BATT_W = 30;
       static const int BATT_H = 12;
@@ -368,13 +356,6 @@ display:
         if (fill_w < 0) fill_w = 0;
         it.filled_rectangle(BATT_X + PAD, BATT_Y + PAD, fill_w, inner_h);
       }
-
-      /* // Text: "xx%  x.xxV"
-      if (!isnan(pct) && !isnan(v)) {
-        it.printf(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "%.0f%%  %.2fV", pct, v);
-      } else {
-        it.print(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "--%  --.--V");
-      } */
 
       // Charging indicator if 5V present
       if (id(voltage_present).state) {
