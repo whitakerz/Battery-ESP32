@@ -25,12 +25,12 @@ and had a custom case designed on Fiverr.
 ```
 Power & Dividers (left)           ESP32 (center)              Waveshare Display (right)
 ───────────────────────────       ────────────────────────    ─────────────────────────────
-+5V ─ [20kΩ] ─● Node A (GPIO36)──► GPIO36 (ADC 5V)           CLK  ─────────────► GPIO18
++5V ─ [20kΩ] ─● Node A (GPIO36)──► GPIO36 (ADC 5V)           CLK  ───────────► GPIO18
               │                                              MOSI ───────────► GPIO23
               │                                              CS   ───────────► GPIO15
               └─[30kΩ]─● Node B (GPIO39 wake)──► GPIO39      DC   ───────────► GPIO17
-                                                            RST  ───────────► GPIO16
-LiPo ─ [36kΩ]─● Node C (GPIO32 batt)──► GPIO32               BUSY ◄────────── GPIO4
+                                                             RST  ───────────► GPIO16
+LiPo ─ [36kΩ]─● Node C (GPIO32 batt)──► GPIO32               BUSY ◄─────────── GPIO4
               │
               └─[100kΩ]─GND
 ```
@@ -72,7 +72,7 @@ Since no suitable enclosure existed, I commissioned a custom design via Fiverr. 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/eink-homeassistant-dashboard.git
+   https://github.com/whitakerz/Battery-ESP32.git
    ```
 2. Flash the ESPHome config:
    ```bash
