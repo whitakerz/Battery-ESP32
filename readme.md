@@ -23,16 +23,41 @@ and had a custom case designed on Fiverr.
 ## Wiring Diagram
 
 ```
-Power & Dividers (left)           ESP32 (center)              Waveshare Display (right)
-───────────────────────────       ────────────────────────    ─────────────────────────────
-+5V ─ [20kΩ] ─● Node A (GPIO36)──► GPIO36 (ADC 5V)           CLK  ─────────────► GPIO18
-              │                                              MOSI ───────────► GPIO23
-              │                                              CS   ───────────► GPIO15
-              └─[30kΩ]─● Node B (GPIO39 wake)──► GPIO39      DC   ───────────► GPIO17
-                                                            RST  ───────────► GPIO16
-LiPo ─ [36kΩ]─● Node C (GPIO32 batt)──► GPIO32               BUSY ◄────────── GPIO4
-              │
-              └─[100kΩ]─GND
+Power & Dividers (left)                             ESP32 (center)             E-Ink Display (right)
+───────────────────────────                   ────────────────────────      ─────────────────────────────
+          +5V supply                            ┌──────────────────┐            Waveshare 2.9" v2-r2
+              |                                 │      ESP32       │              (3.3V logic)
+           [20kΩ]                               │                  │
+              |                                 │  GPIO18 ──────────────── CLK  ─────────────► SCK
+          ──● Node A (GPIO36 sense) ────────────┤◄─ GPIO36 (ADC 5V)|        (SPI clock)
+              |                                 │                  |
+              |                                 │  GPIO23 ──────────────── MOSI ─────────────► DIN
+              |                                 │                  |    (SPI data out)
+              |                                 │                  |
+            (series link)                       │  GPIO15 ───────────────── CS   ─────────────► CS
+              |                                 │                  |
+          ──● Node B (GPIO39 wake) ─────────────┤◄─ GPIO39 (wakeup)|
+              |                                 │                  |
+           [30kΩ]                               │  GPIO17 ───────────────── DC   ─────────────► D/C
+              |                                 │                  |
+            GND                                 │  GPIO16 ───────────────── RST  ─────────────► RST
+                                                │                  |
+      4.2V (LiPo)                               │  GPIO4  ◄──────────────── BUSY ─────────────◄ BUSY
+              |                                 │                  |
+           [36kΩ]                               │  3V3  ─────────────────── VCC  ─────────────► VCC (3.3V)
+              |                                 │  GND  ─────────────────── GND  ─────────────► GND
+          ──● Node C (GPIO32 batt) ─────────────┤◄─ GPIO32 (ADC batt)
+              |                                 │                  |
+           [100kΩ]                              │  GPIO22 ──► LED (Awake) ──►───┐
+              |                                 │                  |       (LED)|
+            GND                                 └──────────────────┘            └───[200Ω] GND
+
+Legend:
+  [value]   = resistor
+  ● Node A  = divider tap for 5V sense (GPIO36)
+  ● Node B  = divider mid / wake input (GPIO39)
+  ● Node C  = divider tap for LiPo sense (GPIO32)
+  LED       = “Awake LED” driven by GPIO22 (add a series resistor if needed)
 ```
 
 GPIO39 doubles as a wake pin for deep sleep. GPIO22 drives an LED to indicate awake state. Both battery and 5V input are monitored via resistor dividers.
@@ -72,7 +97,7 @@ Since no suitable enclosure existed, I commissioned a custom design via Fiverr. 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/eink-homeassistant-dashboard.git
+   https://github.com/whitakerz/Battery-ESP32.git
    ```
 2. Flash the ESPHome config:
    ```bash
