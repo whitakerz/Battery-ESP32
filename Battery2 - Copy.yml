@@ -11,8 +11,8 @@ substitutions:
   night_sleep_time: 8h # 1st sleep time after 10pm
 
 esphome:
-  name: battery
-  friendly_name: Battery
+  name: battery2
+  friendly_name: Battery2
   on_boot:
     priority: 700
     then:
@@ -33,7 +33,7 @@ logger:
 
 api:
   encryption:
-    key: !secret batapi
+    key: !secret bat2api
 
 ota:
   - platform: esphome
@@ -42,10 +42,7 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  manual_ip:
-    static_ip: 192.168.7.103 # 👈 Replace with your desired static IP
-    gateway: 192.168.7.1     # 👈 Replace with your router's IP
-    subnet: 255.255.255.0    # 👈 Your network's subnet mask
+
   ap:
     ssid: "Battery Fallback Hotspot"
     password: "BDVDN7O0KT7E"
@@ -183,7 +180,6 @@ sensor:
           window_size: 4
           send_every: 1    
 
-
 time:
   - platform: homeassistant
     id: home_time
@@ -240,13 +236,14 @@ script:
             - logger.log: "It's nighttime, entering long sleep for ${night_sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
-                event: esphome.battery_sleep
+                event: esphome.battery2_sleep
                 data:
                   device: battery
                   reason: "night"
                   duration: "${night_sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+
             ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
@@ -255,13 +252,14 @@ script:
             - logger.log: "It's daytime, entering short sleep for ${sleep_time}"
             ### THIS IS LOGGING IN HOME ASSISTANT ###
             - homeassistant.event:
-                event: esphome.battery_sleep
+                event: esphome.battery2_sleep
                 data:
                   device: battery
                   reason: "day"
                   duration: "${sleep_time}"
                   voltage: !lambda 'return id(battery_voltage).state;'
                   now: !lambda 'return id(home_time).now().strftime("%Y-%m-%d %H:%M:%S");'
+
             ### TO HERE ###
             - deep_sleep.enter:
                 id: deep_sleep_ctrl
@@ -279,11 +277,6 @@ light:
     output: led_pin
 
 interval:
-  #- interval: 5s
-  #  then:
-  #    - component.update: adc_5v_raw
-  #    - component.update: adc_batt_raw
-
   - interval: 2min
     then:
       - if:
@@ -313,73 +306,62 @@ display:
         ESP_LOGI("display", "Sensors not ready — skipping EPaper draw");
         return;
       }
-      static const int TESTING_SPACER = -5;
-      static const int IMAGE_HORIZONTAL = 10;
-      static const int TEMP_HORIZONTAL = IMAGE_HORIZONTAL + 40;
-      static const int HUMIDITY_HORIZONTAL = TEMP_HORIZONTAL + 110;
-      static const int PRESURE_HORIZONTAL = HUMIDITY_HORIZONTAL + 65;
-      static const int OUTSIDE_TEMP_VERT = 15 + TESTING_SPACER;
-      static const int OUTSIDE_TEXT_VERT = OUTSIDE_TEMP_VERT + 9;
-      static const int INSIDE_TEMP_VERT = OUTSIDE_TEMP_VERT + 53;
-      static const int INSIDE_TEXT_VERT = INSIDE_TEMP_VERT + 9;
 
-      
-      it.strftime(5, 110, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M:%S %p", id(home_time).now());
-      it.printf(TEMP_HORIZONTAL, OUTSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
-      it.printf(HUMIDITY_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
-      it.printf(PRESURE_HORIZONTAL, OUTSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(forecast_pressure).state);
-      it.printf(HUMIDITY_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+      // === Helper lambda for battery ===
+      auto draw_battery = [&](int x, int y, float pct, bool charging) {
+        const int W = 30, H = 12;
+        const int PAD = 3;
+
+        // Outer body + nub
+        it.rectangle(x, y, W, H);
+        it.filled_rectangle(x + W, y + (H / 3), 4, H / 3);
+
+        // Inner bar outline
+        int inner_w = W - 2 * PAD;
+        int inner_h = H - 2 * PAD;
+        it.rectangle(x + PAD, y + PAD, inner_w, inner_h);
+
+        // Fill level
+        if (!isnan(pct)) {
+          int fill_w = (int) roundf(inner_w * (pct / 100.0f));
+          if (fill_w < 0) fill_w = 0;
+          it.filled_rectangle(x + PAD, y + PAD, fill_w, inner_h);
+        }
+
+        // Charging indicator
+        if (charging) {
+          it.print(x - 18, y + (H / 2), id(small), TextAlign::CENTER_LEFT, "+5V");
+        }
+      };
+
+      // === Header ===
+      it.strftime(5, 5, id(small), TextAlign::TOP_LEFT, "%m/%d/%Y %I:%M %p", id(home_time).now());
+
+      // === Outdoor Block ===
+      int y_out = 25;
+      it.image(5, y_out, id(icon_tree));
+      it.printf(50, y_out, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_outside).state);
+      it.printf(120, y_out + 8, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_outside).state);
+      it.printf(180, y_out + 8, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(forecast_pressure).state);
+
+      // === Indoor Block ===
+      int y_in = 70;
+      it.image(5, y_in, id(icon_inside));
       if (!isnan(id(temperature_printer).state)) {
-        it.printf(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
+        it.printf(50, y_in, id(GILSANUB), TextAlign::TOP_LEFT, "%.0f°", id(temperature_printer).state);
       } else {
-        it.print(TEMP_HORIZONTAL, INSIDE_TEMP_VERT, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
+        it.print(50, y_in, id(GILSANUB), TextAlign::TOP_LEFT, "--°");
       }
-      it.printf(PRESURE_HORIZONTAL, INSIDE_TEXT_VERT, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(pressure_printer).state);
-      it.image(IMAGE_HORIZONTAL, INSIDE_TEMP_VERT + 5, id(icon_inside));
-      it.image(IMAGE_HORIZONTAL - 3, OUTSIDE_TEMP_VERT, id(icon_tree));
+      it.printf(120, y_in + 8, id(my_font), TextAlign::TOP_LEFT, "%.0f%%", id(humidity_printer).state);
+      it.printf(180, y_in + 8, id(my_font), TextAlign::TOP_LEFT, "%.0f", id(pressure_printer).state);
 
-      
-      
-      
-      
-      // ---- Battery readout (top-right) ----
-      static const int BATT_X = 250;   // adjust to taste for your layout
-      static const int BATT_Y = 2;
-      static const int BATT_W = 30;
-      static const int BATT_H = 12;
+      // === Battery ===
+      draw_battery(
+        250, 2,
+        id(battery_percent).has_state() ? id(battery_percent).state : NAN,
+        id(voltage_present).state
+      );
 
-      // Outline box
-      it.rectangle(BATT_X, BATT_Y, BATT_W, BATT_H);
-      // Battery "nub"
-      it.filled_rectangle(BATT_X + BATT_W, BATT_Y + (BATT_H/3), 4, BATT_H/3);
-
-      // Fill level bar
-      float pct = id(battery_percent).has_state() ? id(battery_percent).state : NAN;
-      float v   = id(battery_voltage).has_state() ? id(battery_voltage).state : NAN;
-
-      // inner bar area (with small padding)
-      const int PAD = 3;
-      int inner_w = BATT_W - 2*PAD;
-      int inner_h = BATT_H - 2*PAD;
-      it.rectangle(BATT_X + PAD, BATT_Y + PAD, inner_w, inner_h);
-
-      if (!isnan(pct)) {
-        int fill_w = (int) roundf(inner_w * (pct / 100.0f));
-        if (fill_w < 0) fill_w = 0;
-        it.filled_rectangle(BATT_X + PAD, BATT_Y + PAD, fill_w, inner_h);
-      }
-
-      /* // Text: "xx%  x.xxV"
-      if (!isnan(pct) && !isnan(v)) {
-        it.printf(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "%.0f%%  %.2fV", pct, v);
-      } else {
-        it.print(BATT_X - 2, BATT_Y + BATT_H + 2, id(small), TextAlign::TOP_LEFT, "--%  --.--V");
-      } */
-
-      // Charging indicator if 5V present
-      if (id(voltage_present).state) {
-        it.print(BATT_X - BATT_W, BATT_Y + (BATT_H/2), id(small), TextAlign::CENTER_LEFT, "+5V");
-      }
 
 deep_sleep:
   id: deep_sleep_ctrl
