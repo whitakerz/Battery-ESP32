@@ -11,8 +11,8 @@ substitutions:
   night_sleep_time: 8h # 1st sleep time after 10pm
 
 esphome:
-  name: battery
-  friendly_name: Battery
+  name: eink
+  friendly_name: Eink
   on_boot:
     priority: 700
     then:
