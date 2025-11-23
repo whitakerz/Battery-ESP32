@@ -16,8 +16,7 @@ It was designed to display indoor and outdoor temperature, humidity, pressure, a
 - Automatic day/night deep sleep control
 - Home Assistant event logging for voltage and sleep cycles
 - OTA updates and encrypted API communication
-=======
-Because existing code and enclosures did not meet my requirements, I combined multiple ESPHome projects, wrote custom configuration, 
+- Because existing code and enclosures did not meet my requirements, I combined multiple ESPHome projects, wrote custom configuration, 
 and had a custom case designed on Fiverr.
 
 
