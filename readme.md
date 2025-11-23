@@ -8,7 +8,7 @@ A simple, battery-powered, Waveshare 2.9" e-ink display for Home Assistant, powe
 This project is a low-power, always-ready e-ink display for Home Assistant that runs on a Lolin D32 (ESP32) microcontroller. 
 It was designed to display indoor and outdoor temperature, humidity, pressure, and weather conditions on a battery-powered device.
 
-<<<<<<< HEAD
+
 **Key features:**
 - Temperature and humidity sensing via SHT31 (I²C)
 - Battery and 5 V input voltage measurement using ADC (through a [resistor network](https://github.com/whitakerz/Battery-ESP32/blob/main/Resistor%20Network.txt)).
@@ -19,7 +19,7 @@ It was designed to display indoor and outdoor temperature, humidity, pressure, a
 =======
 Because existing code and enclosures did not meet my requirements, I combined multiple ESPHome projects, wrote custom configuration, 
 and had a custom case designed on Fiverr.
->>>>>>> parent of 965846c (Update readme.md)
+
 
 ## Hardware Used
 
