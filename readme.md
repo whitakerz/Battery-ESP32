@@ -10,7 +10,6 @@ It was designed to display indoor and outdoor temperature, humidity, pressure, a
 
 
 **Key features:**
-- Temperature and humidity sensing via SHT31 (I²C)
 - Battery and 5 V input voltage measurement using ADC (through a [resistor network](https://github.com/whitakerz/Battery-ESP32/blob/main/Resistor%20Network.txt)).
 - Battery percentage estimation with nonlinear calibration
 - Automatic day/night deep sleep control
